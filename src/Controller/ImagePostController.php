@@ -3,6 +3,7 @@
 namespace App\Controller;
 
 use App\Entity\ImagePost;
+use App\Message\AddPonkaToImage;
 use App\Photo\PhotoPonkaficator;
 use App\Repository\ImagePostRepository;
 use App\Photo\PhotoFileManager;
@@ -12,6 +13,7 @@ use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\Validator\Constraints\Image;
 use Symfony\Component\Validator\Constraints\NotBlank;
@@ -27,21 +29,32 @@ class ImagePostController extends AbstractController
         $posts = $repository->findBy([], ['createdAt' => 'DESC']);
 
         return $this->toJson([
-            'items' => $posts
+            'items' => $posts,
         ]);
     }
 
     /**
      * @Route("/api/images", methods="POST")
+     *
+     * @param Request                $request
+     * @param ValidatorInterface     $validator
+     * @param PhotoFileManager       $photoManager
+     * @param EntityManagerInterface $entityManager
+     * @param PhotoPonkaficator      $ponkaficator
+     * @param MessageBusInterface    $messageBus
+     *
+     * @return JsonResponse
+     *
+     * @throws \Exception
      */
-    public function create(Request $request, ValidatorInterface $validator, PhotoFileManager $photoManager, EntityManagerInterface $entityManager, PhotoPonkaficator $ponkaficator)
+    public function create(Request $request, ValidatorInterface $validator, PhotoFileManager $photoManager, EntityManagerInterface $entityManager, PhotoPonkaficator $ponkaficator, MessageBusInterface $messageBus)
     {
         /** @var UploadedFile $imageFile */
         $imageFile = $request->files->get('file');
 
         $errors = $validator->validate($imageFile, [
             new Image(),
-            new NotBlank()
+            new NotBlank(),
         ]);
 
         if (count($errors) > 0) {
@@ -55,6 +68,9 @@ class ImagePostController extends AbstractController
 
         $entityManager->persist($imagePost);
         $entityManager->flush();
+
+        $message = new AddPonkaToImage();
+        $messageBus->dispatch($message);
 
         /*
          * Start Ponkafication!
@@ -74,6 +90,12 @@ class ImagePostController extends AbstractController
 
     /**
      * @Route("/api/images/{id}", methods="DELETE")
+     *
+     * @param ImagePost              $imagePost
+     * @param EntityManagerInterface $entityManager
+     * @param PhotoFileManager       $photoManager
+     *
+     * @return Response
      */
     public function delete(ImagePost $imagePost, EntityManagerInterface $entityManager, PhotoFileManager $photoManager)
     {
